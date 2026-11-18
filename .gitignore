@@ -1,0 +1,69 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Backup files
+backup/
+*.bak
+
+# PyInstaller generated files
+build/
+dist/
+*.spec
+
+# Windows installer output
+installer/
+*.exe
+*.msi
+
+# API settings and credentials
+.env
+.env.*
+!.env.example
+api_settings.json
+api_key.dpapi
+providers.json
+credentials.json
+secrets.json
+*.key
+*.pem
+
+# AI memory and database
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+task_history.json
+
+# User-generated files
+recordings/
+screenshots/
+DesktopAIWorkspace/
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+temp/
+tmp/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Windows files
+Thumbs.db
+desktop.ini
+
+# Compressed files
+*.zip
+*.rar
+*.7z

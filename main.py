@@ -2,12 +2,12 @@ import tkinter as tk
 import customtkinter as ctk
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import threading, time, json, queue
 from pynput import mouse, keyboard
 
 root = ctk.CTk()
-root.title('Desktop AI Agent v5.1 — Voice Edition')
+root.title('Desktop AI Agent v5.3 — Multi-Provider Edition')
 root.geometry('1060x820')
 root.minsize(860, 680)
 root.attributes('-topmost', False)
@@ -173,6 +173,7 @@ def poll():
 import base64, io, ctypes, sys
 from openai import OpenAI, RateLimitError
 from pathlib import Path
+from urllib.parse import urlsplit
 import os
 import task_memory
 import win32crypt
@@ -198,6 +199,106 @@ remember_key = tk.BooleanVar(value=False)
 save_status = tk.StringVar(value='Settings not saved yet.')
 connection_status = tk.StringVar(value='Not tested')
 connection_detail = tk.StringVar(value='')
+
+def valid_endpoint(url):
+    try:
+        parsed = urlsplit(url)
+        return parsed.scheme == 'https' and bool(parsed.hostname) and not (parsed.username or parsed.password or parsed.query or parsed.fragment)
+    except ValueError:
+        return False
+
+profiles_path = settings_path.with_name('providers.json')
+profile_name = tk.StringVar()
+profiles = {}
+
+def load_profiles():
+    if profiles_path.exists():
+        data = json.loads(profiles_path.read_text(encoding='utf-8'))
+        if not isinstance(data, dict): raise ValueError('Invalid profile store')
+        return data
+    return {}
+
+def persist_profiles(data):
+    profiles_path.parent.mkdir(parents=True, exist_ok=True)
+    temp = profiles_path.with_suffix('.tmp')
+    temp.write_text(json.dumps(data, indent=2), encoding='utf-8')
+    temp.replace(profiles_path)
+
+def profile_busy():
+    return busy() or recording or voice_active
+
+def refresh_profiles():
+    profile_combo.configure(values=sorted(profiles))
+
+def save_profile():
+    if profile_busy(): return
+    try:
+        url, key, name, rpm, timeout = settings()
+        label = simpledialog.askstring('Save provider', 'Profile name:', initialvalue=profile_name.get() or 'My provider', parent=root)
+        if not label or not label.strip(): return
+        label = label.strip()[:100]
+        if label in profiles and not messagebox.askyesno('Replace profile', 'Replace saved profile '+label+'?'): return
+        # DPAPI ciphertext only; never store a plaintext key in JSON.
+        encrypted = win32crypt.CryptProtectData(key.encode('utf-8'), 'DesktopAI provider', None, None, None, 1).hex() if remember_key.get() else ''
+        updated = dict(profiles)
+        updated[label] = dict(base_url=url, model=name, rpm=rpm, timeout=timeout, encrypted_key=encrypted)
+        persist_profiles(updated)
+        profiles.clear(); profiles.update(updated)
+        profile_name.set(label); refresh_profiles()
+        save_status.set('Provider profile saved. Use Save Settings to make it the startup configuration.')
+    except Exception as exc:
+        save_status.set('Profile save failed: '+type(exc).__name__)
+
+def select_profile():
+    if profile_busy(): return
+    try:
+        data = profiles[profile_name.get()]
+        api_key.set(''); model_combo.configure(values=[])
+        base.set(data['base_url']); model.set(data['model'])
+        rpm_var.set(str(data['rpm'])); timeout_var.set(str(data['timeout']))
+        encrypted = data.get('encrypted_key',''); remember_key.set(bool(encrypted))
+        if encrypted:
+            _, raw = win32crypt.CryptUnprotectData(bytes.fromhex(encrypted), None, None, None, 1)
+            api_key.set(raw.decode('utf-8'))
+        save_status.set('Profile loaded. Enter key if not remembered; test before running.')
+    except Exception as exc:
+        save_status.set('Profile load failed: '+type(exc).__name__)
+
+def delete_profile():
+    if profile_busy(): return
+    label = profile_name.get()
+    if label not in profiles or not messagebox.askyesno('Delete profile','Delete saved profile '+label+'? Active settings are unchanged.'): return
+    try:
+        updated = dict(profiles); del updated[label]; persist_profiles(updated)
+        profiles.clear(); profiles.update(updated); profile_name.set(''); refresh_profiles()
+        save_status.set('Saved profile deleted. Active settings are unchanged.')
+    except Exception as exc:
+        save_status.set('Profile deletion failed: '+type(exc).__name__)
+
+def discover_models():
+    global worker
+    if profile_busy(): return
+    url, key = base.get().strip(), api_key.get().strip()
+    if not valid_endpoint(url) or not key:
+        save_status.set('Enter a valid HTTPS endpoint and API key first.'); return
+    if not messagebox.askyesno('Discover models', 'Send your API key to '+url+' to retrieve its model list?'): return
+    discover_button.configure(state='disabled'); status.set('Discovering models'); save_status.set('Retrieving models...')
+    def run():
+        try:
+            with OpenAI(base_url=url, api_key=key, timeout=25, max_retries=0) as client:
+                ids = sorted({m.id for m in client.models.list().data if isinstance(m.id,str) and m.id})
+            def apply():
+                if (base.get().strip(),api_key.get().strip()) != (url,key):
+                    save_status.set('Settings changed; discarded model list.'); return
+                model_combo.configure(values=ids)
+                save_status.set(f'Found {len(ids)} models. Select one or type its ID.' if ids else 'No models returned; enter a model ID manually.')
+            commands.put((apply,None))
+        except Exception as exc:
+            detail=type(exc).__name__
+            commands.put((lambda:save_status.set('Model discovery failed: '+detail+'. Enter model ID manually.'),None))
+        finally:
+            commands.put((lambda:discover_button.configure(state='normal'),None)); commands.put(('done',None))
+    worker=threading.Thread(target=run,daemon=True); worker.start()
 
 def load_api_settings():
     try:
@@ -278,7 +379,7 @@ def log_line(text):
 
 def settings():
     url=base.get().strip(); key=api_key.get().strip(); name=model.get().strip()
-    if not url.startswith('https://') or not key or not name:
+    if not valid_endpoint(url) or not key or not name:
         raise ValueError('Enter an HTTPS base URL, API key and model ID.')
     rpm=int(rpm_var.get()); timeout=int(timeout_var.get())
     if not 1<=rpm<=10 or not 15<=timeout<=300: raise ValueError("RPM must be 1–10 and timeout 15–300 seconds.")
@@ -364,7 +465,7 @@ def start_ai():
 
 def test_api():
     global worker
-    if busy() or recording: return
+    if busy() or recording or voice_active: return
     try: config=settings()
     except Exception as exc:
         show_connection('Invalid settings', str(exc), '#b91c1c'); return
@@ -609,8 +710,24 @@ for label,fn in [('Save last successful task',save_workflow),('Load selected int
 refresh_workflows()
 settings_tab=ttk.Frame(notebook,padding=16); notebook.add(settings_tab,text='API Settings')
 settings_entries=[]
+profile_row=ttk.Frame(settings_tab); profile_row.pack(fill='x',pady=3)
+profile_combo=ttk.Combobox(profile_row,textvariable=profile_name,state='readonly',width=24); profile_combo.pack(side='left',fill='x',expand=True)
+for label,fn in [('Load',select_profile),('Save profile',save_profile),('Delete',delete_profile)]:
+    ttk.Button(profile_row,text=label,command=fn).pack(side='left',padx=2)
+try:
+    profiles.update(load_profiles()); refresh_profiles()
+except Exception:
+    save_status.set('Could not read saved profiles.')
 for label,var,secret in [('Base URL',base,False),('API Key',api_key,True),('Model ID',model,False),('Requests per minute (1–10)',rpm_var,False),('Timeout seconds (15–300)',timeout_var,False)]:
-    ttk.Label(settings_tab,text=label).pack(anchor='w',pady=(12,3)); entry=ttk.Entry(settings_tab,textvariable=var,show='*' if secret else ''); entry.pack(fill='x'); settings_entries.append(entry)
+    ttk.Label(settings_tab,text=label).pack(anchor='w',pady=(5,2))
+    if var is model:
+        model_row=ttk.Frame(settings_tab); model_row.pack(fill='x')
+        model_combo=ttk.Combobox(model_row,textvariable=var); model_combo.pack(side='left',fill='x',expand=True)
+        entry=model_combo
+        discover_button=ttk.Button(model_row,text='Discover models',command=discover_models); discover_button.pack(side='left',padx=4)
+    else:
+        entry=ttk.Entry(settings_tab,textvariable=var,show='*' if secret else ''); entry.pack(fill='x')
+    settings_entries.append(entry)
 ttk.Checkbutton(settings_tab,text='Remember API key securely on this PC',variable=remember_key).pack(anchor='w',pady=(14,4))
 ttk.Button(settings_tab,text='Save Settings',command=save_api_settings).pack(fill='x',pady=4)
 ttk.Label(settings_tab,textvariable=save_status,wraplength=530).pack(anchor='w',pady=4)
@@ -627,6 +744,7 @@ def invalidate_connection(*args):
     connection_detail.set('')
     connection_label.configure(foreground='#64748b')
 for variable in (base,model,api_key): variable.trace_add('write',invalidate_connection)
+for variable in (base,api_key): variable.trace_add('write',lambda *_:model_combo.configure(values=[]))
 
 memory_tab=ttk.Frame(notebook,padding=16); notebook.add(memory_tab,text='Memory')
 ttk.Label(memory_tab,text='Saved task history',font=('Segoe UI',20,'bold')).pack(anchor='w')

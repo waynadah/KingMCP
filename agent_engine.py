@@ -17,6 +17,11 @@ from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionEr
 SERVER=Path(__file__).with_name('desktop_server.py')
 
 def parameters():
+    if getattr(sys, 'frozen', False):
+        server = Path(sys.executable).parent / 'server' / 'DesktopAI-MCP.exe'
+        if not server.is_file():
+            raise FileNotFoundError(f'MCP executable missing: {server}')
+        return StdioServerParameters(command=str(server), args=[])
     return StdioServerParameters(command=sys.executable,args=[str(SERVER)])
 
 # Shared across agent runs in this process. Conservative pacing for 10 RPM.

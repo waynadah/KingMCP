@@ -1,0 +1,7 @@
+# Desktop AI v5.2 — Windows packaging
+
+Apply to the complete v5.1 project. Back up the project first. Close running copies before building or installing. Activate your existing virtual environment on Windows, then run `build_windows.cmd` from the project root. The script installs dependencies and builds two executables: a GUI and a console MCP stdio server. Keep the entire `dist/DesktopAI` folder together. Launch `dist/DesktopAI/DesktopAI.exe`. No Python installation is needed on the target machine if the build works; Excel tools still require Excel and voice recognition needs a microphone and internet.
+
+Optional installer: install Inno Setup 6 from https://jrsoftware.org/isinfo.php, open DesktopAI.iss and compile. Output: installer/DesktopAI-Setup-5.2.exe. Per-user installation, optional desktop shortcut, Start menu entry and uninstall support. Uninstall does not deliberately remove existing LocalAppData memory or API settings. DPAPI credentials remain tied to the original Windows user/machine. Do not ship private recordings, memory or credentials.
+
+Smoke test on Windows: launch GUI, test API and MCP connection, open Calculator, verify stop, restart and check memory, test voice and Excel if installed. The build is unsigned and may trigger SmartScreen. No Windows binaries were built or tested here. If the server fails, run the source version for diagnostics; do not launch the stdio server directly as a normal app. A console window may briefly appear when MCP starts. Build outputs are not included in this patch.

@@ -1,4 +1,4 @@
-mcp>=1.12,<2
+mcp[cli]>=1.12,<2
 openai>=1.70,<3
 pyautogui>=0.9.54
 pillow>=10
