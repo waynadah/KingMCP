@@ -1,0 +1,6 @@
+mcp>=1.12,<2
+openai>=1.70,<3
+pyautogui>=0.9.54
+pillow>=10
+pynput>=1.7
+pywin32>=306; sys_platform == 'win32'
