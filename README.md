@@ -1,13 +1,13 @@
-# Desktop AI Agent — MCP Edition
+# KingMCP — Desktop AI Agent
 
-![Version](https://img.shields.io/badge/version-4.9-blue)
+![Version](https://img.shields.io/badge/version-5.3-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 ![MCP](https://img.shields.io/badge/protocol-MCP-6366F1)
 
 A Python-powered Windows desktop automation assistant that combines AI vision, native function calling, the Model Context Protocol (MCP), and persistent memory. Describe a task in natural language and let the agent inspect the desktop, plan actions, execute tools, and evaluate results.
 
-> **Development status:** v4.9 is an experimental release. Windows integration and live AI behavior require further testing. Keep manual approval enabled for important tasks.
+> **Development status:** v5.3 is an experimental development release. Windows integration and live AI behavior require further testing. Keep manual approval enabled for important tasks.
 
 ## Features
 
@@ -21,11 +21,16 @@ A Python-powered Windows desktop automation assistant that combines AI vision, n
 - Optional Windows DPAPI protection for saved API credentials.
 - Manual action approval and emergency stop hotkey.
 
+- Modern dark-mode chat interface, sidebar navigation and collapsible action log.
+- Push-to-talk voice instructions and optional spoken task status.
+- Named provider profiles, model discovery and per-profile settings.
+- Windows executable and installer build scripts.
+
 ## Architecture
 
 ```mermaid
 flowchart TD
-    U[User] --> G[Tkinter GUI]
+    U[User] --> G[CustomTkinter chat GUI]
     G --> A[Agent engine]
     A <--> P[OpenAI-compatible AI API]
     A <--> M[SQLite task memory]
@@ -45,9 +50,11 @@ flowchart TD
 
 ## Installation
 
-Download or clone this repository, then open Command Prompt in the project directory. If using the incremental release archives, apply the earlier patches through v4.9 in order; the v4.9 patch alone is not a complete application.
+Download or clone this repository, then open Command Prompt in the project directory. If using the incremental release archives, apply the earlier patches through v5.3 in order; the v5.3 patch alone is not a complete application.
 
 ```bat
+git clone https://github.com/waynadah/KingMCP.git
+cd KingMCP
 py -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
@@ -69,12 +76,24 @@ Open the **API Settings** tab and configure your provider:
 
 Save your settings and select **Test API and native tool calling**. The example provider and model are not guaranteed to remain available. Never commit an API key to GitHub.
 
+### Provider profiles (v5.3)
+
+| Provider | OpenAI-compatible base URL |
+| --- | --- |
+| OrangeVPN | `https://ai-api.orangevpn.com.ph/v1` |
+| OpenAI | `https://api.openai.com/v1` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| DeepSeek | `https://api.deepseek.com/v1` |
+| Custom | Your compatible HTTPS endpoint |
+
+Enter your own key, click **Discover models**, choose or type a model ID, and test native tool calling. Save a named profile, then use **Save Settings** to persist the active configuration. Model discovery retrieves the first page only. A successful tool-calling test does not establish vision support; not every model or provider is suitable for desktop automation. Native non-OpenAI API formats are not supported. Rate-limit accounting is shared across providers and excludes discovery and connection tests.
+
 ## Usage
 
 1. Open the **AI Agent** tab.
 2. Enter a task in natural language.
 3. Set the maximum number of steps and keep **Approve each action** enabled.
-4. Click **Start AI** and review proposed actions.
+4. Click **Send task** and review proposed actions.
 5. Monitor the action log. Use **Continue Task** to resume with previous context, or **Reset All Tasks** to clear task memory, workflows, and logs.
 
 Example tasks:
@@ -99,6 +118,10 @@ Find PHP files in my approved workspace.
 | F12 | Exit |
 
 Stopping does not undo completed actions, and an in-progress tool may need to finish before stopping.
+
+## Voice control
+
+Click **Speak task**, choose `en-US`, `en-PH` or `fil-PH`, and approve online transcription. Review the recognized text before submitting. Enable **Speak task status** for local Windows speech output (off by default). SpeechRecognition uses Google's online recognition service; microphone audio is transmitted for transcription after confirmation. Windows SAPI reads the final status, not every response. F10 stops automation, not ongoing transcription.
 
 ## MCP tools
 
@@ -140,15 +163,36 @@ Use the **Workflows** tab to save the last successful task under a name and load
 ## Project structure
 
 ```text
-DesktopAI/
+KingMCP/
 ├── main.py                 # GUI, recorder, API settings
 ├── agent_engine.py         # AI loop, planning, retries
 ├── desktop_server.py       # MCP desktop tools
 ├── application_tools.py    # File, browser, Word and Excel tools
 ├── task_memory.py          # SQLite history and workflows
+├── voice_tools.py          # Speech recognition and Windows speech
+├── build_windows.cmd       # PyInstaller build script
+├── DesktopAI.iss           # Inno Setup installer configuration
+├── desktopai.ico           # Application icon
+├── .gitignore              # Local and generated file exclusions
 ├── requirements.txt        # Python dependencies
 └── README.md
 ```
+
+## Build a Windows executable
+
+Run these commands from the repository in an activated Python environment:
+
+```bat
+python -m pip install -r requirements.txt
+python -m pip install "mcp[cli]"
+build_windows.cmd
+```
+
+The extra MCP CLI dependencies prevent the known `ModuleNotFoundError: No module named 'typer'` error when PyInstaller collects MCP submodules. For a permanent fix, change the MCP requirement to `mcp[cli]>=1.12,<2` if it has not already been updated.
+
+After a successful build, launch `dist\DesktopAI\DesktopAI.exe`. Keep the complete folder, including `_internal` and `server`, together. The MCP server is packaged separately for stdio communication.
+
+To create an installer, install [Inno Setup](https://jrsoftware.org/isinfo.php), open `DesktopAI.iss`, and compile it. Publish tested binaries via [GitHub Releases](https://github.com/waynadah/KingMCP/releases), not the source tree. The executable is unsigned and may trigger SmartScreen. Build scripts are provided; successful Windows compilation is not guaranteed.
 
 ## Troubleshooting
 
@@ -159,14 +203,16 @@ DesktopAI/
 | Native tool calling fails | Select a model supporting function calling and run the API test. |
 | UI control not found | Inspect the correct window; use screenshot-based interaction if necessary. |
 | Excel tool fails | Open Excel and a workbook; verify COM access and pywin32 installation. |
+| PyInstaller missing `typer` | Run `python -m pip install "mcp[cli]"` in the build environment. |
+| Microphone unavailable | Check Windows microphone permissions and PyAudio installation. |
 | Missing dependency | Activate the virtual environment and reinstall requirements. |
 | Agent repeats checks | Stop the task, inspect the actual result, and continue with a specific instruction. |
 
 ## Privacy and safety
 
-This application can control your desktop. Only run trusted tasks, review actions, and keep F10 available. Screenshots, prompts, retrieved file contents, and tool results may be transmitted to the configured AI provider. Local task history is not encrypted. Avoid exposing confidential information, and do not treat model verification as proof of correctness. Use a dedicated test workspace for development.
+This application can control your desktop. Only run trusted tasks, review actions, and keep F10 available. Screenshots, prompts, retrieved file contents, and tool results may be transmitted to the configured AI provider. Local task history is not encrypted. Provider profiles are stored in `%LOCALAPPDATA%\DesktopAI\providers.json`; remembered keys use Windows DPAPI. Task memory is shared across providers, so reset it before switching if necessary. Avoid exposing confidential information, and do not treat model verification as proof of correctness. Use a dedicated test workspace for development.
 
-Before publishing, exclude `.venv/`, `__pycache__/`, `.env`, `*.dpapi`, `api_settings.json`, `memory.db*`, `task_history.json`, private recordings, and screenshots containing sensitive data from Git. Review your entire commit history for secrets.
+Before publishing, exclude `.venv/`, `__pycache__/`, `.env`, `*.dpapi`, `api_settings.json`, `providers.json`, `memory.db*`, `task_history.json`, private recordings, and screenshots containing sensitive data from Git. Review your entire commit history for secrets.
 
 ## Roadmap
 
@@ -182,11 +228,19 @@ Before publishing, exclude `.venv/`, `__pycache__/`, `.env`, `*.dpapi`, `api_set
 | 4.7 | SQLite memory and workflows | Implemented |
 | 4.8 | Advanced application tools | Implemented |
 | 4.9 | API optimization | Implemented |
-| 5.0 | Modern chat-based GUI | Planned |
-| 5.1 | Voice commands | Planned |
-| 5.2 | Windows executable installer | Planned |
+| 5.0 | Modern chat-based GUI | Implemented |
+| 5.1 | Voice commands | Implemented |
+| 5.2 | Windows executable packaging | Build scripts provided |
+| 5.3 | Multiple providers and model discovery | Implemented |
+| 5.4 | Local workflow replay | Planned |
+| 5.5 | Advanced task management | Planned |
+| 6.0 | Multi-agent desktop assistant | Planned |
 
-Future improvements include automatic model discovery, richer browser automation, stronger verification, and local workflow execution.
+Implemented means source code is available in the development patches; it does not imply full Windows integration testing. Future improvements include richer browser automation, stronger verification and local workflow execution.
+
+## Repository
+
+[github.com/waynadah/KingMCP](https://github.com/waynadah/KingMCP) · [Issues](https://github.com/waynadah/KingMCP/issues) · [Releases](https://github.com/waynadah/KingMCP/releases)
 
 ## Contributing
 
