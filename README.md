@@ -1,2 +1,0 @@
-# KingMCP
-Simple Desktop MCP
