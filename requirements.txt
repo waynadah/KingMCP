@@ -8,3 +8,7 @@ pywin32>=306; sys_platform == 'win32'
 pywinauto>=0.6.8
 
 python-docx>=1.1,<2
+
+customtkinter>=5.2,<6
+
+SpeechRecognition[audio]>=3.10,<4

@@ -1,0 +1,4 @@
+Desktop AI v5.1 — Voice Edition (requires v5.0 and prior patches)
+Replace main.py and requirements.txt; add voice_tools.py.
+Activate your existing virtual environment and run python -m pip install -r requirements.txt.
+Speak task records one phrase after explicit consent and sends audio to Google speech recognition (internet required). Review the transcript before Send task. English US/Philippines and Filipino language options are available; recognition quality varies. Speak task status is off by default and uses local Windows SAPI voices. It reads the final task status, not every assistant message. No audio files are intentionally saved. Microphone capture is bounded but F10 does not cancel a transcription already in progress. Windows microphone and SAPI testing required. Existing engine and memory are unchanged.

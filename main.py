@@ -1,12 +1,15 @@
 import tkinter as tk
+import customtkinter as ctk
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 from tkinter import ttk, filedialog, messagebox
 import threading, time, json, queue
 from pynput import mouse, keyboard
 
-root = tk.Tk()
-root.title('Desktop AI Agent v4.9 — MCP Edition')
-root.geometry('620x720')
-root.configure(bg='#eef2f7')
+root = ctk.CTk()
+root.title('Desktop AI Agent v5.1 — Voice Edition')
+root.geometry('1060x820')
+root.minsize(860, 680)
 root.attributes('-topmost', False)
 controller = mouse.Controller()
 commands = queue.Queue()
@@ -269,6 +272,8 @@ def log_line(text):
         elif text.startswith('AI response'): ai_status.set('Checking AI response...')
         elif text.split(' ',1)[0] in ('click','move','type_text','hotkey','press','scroll','list_windows','focus_window','excel_write','screen_size','draw_path','open_application','inspect_window','click_control','excel_read','excel_format'): ai_status.set('Executing / awaiting approval: '+text.split(' ',1)[0])
         log.insert('end', text+'\n'); log.see('end')
+        if text.startswith(('AI plan / update:', 'AI response (no tool call):')):
+            add_chat('Assistant', text.split(':',1)[1].strip())
     commands.put((update,None))
 
 def settings():
@@ -312,7 +317,7 @@ def ai_run(config,task,max_steps,approval):
         final_status='Stopped' if stop.is_set() else outcome
         try: task_memory.append('task outcome',final_status)
         except Exception as exc: log_line('Memory save failed: '+type(exc).__name__)
-        commands.put((lambda: (ai_status.set(final_status),refresh_memory()),None))
+        commands.put((lambda: (ai_status.set(final_status),refresh_memory(),add_chat('Status',final_status), speak_result(final_status)),None))
         commands.put(('done',None))
 
 def refresh_memory():
@@ -328,7 +333,7 @@ def reset_tasks():
     except Exception as exc:
         messagebox.showerror('Reset failed',str(exc)); return
     log.delete('1.0','end'); task_box.delete('1.0','end')
-    ai_status.set('Ready'); refresh_memory(); refresh_workflows()
+    ai_status.set('Ready'); refresh_memory(); refresh_workflows(); reload_chat()
 
 def continue_task():
     if busy(): return
@@ -343,7 +348,7 @@ def continue_task():
 
 def start_ai():
     global worker
-    if busy() or recording or status.get()=='Starting recording...': return
+    if busy() or recording or voice_active or status.get()=='Starting recording...': return
     try:
         config=settings(); task=task_box.get('1.0','end').strip(); steps=int(limit.get())
         if not task or not 1<=steps<=100: raise ValueError('Enter a task and step limit (1–100).')
@@ -352,6 +357,7 @@ def start_ai():
     approval = bool(approve.get())
     if not approval and not messagebox.askyesno('Automatic mode', 'Desktop actions will execute without individual approval. Keep F10 ready to stop. Continue?'):
         return
+    add_chat('You',task)
     log_line('Manual approval: '+('ON' if approval else 'OFF'))
     stop.clear(); pause.clear(); status.set('AI running'); ai_status.set('Starting AI...'); root.iconify()
     worker=threading.Thread(target=ai_run,args=(config,task,steps,approval),daemon=True); worker.start()
@@ -396,13 +402,41 @@ def test_api():
     worker=threading.Thread(target=run,daemon=True); worker.start()
 
 
+BG='#111827'; PANEL='#1f2937'; FG='#e5e7eb'; MUTED='#9ca3af'
 style=ttk.Style(root)
 style.theme_use('clam')
-style.configure('TButton',padding=9,font=('Segoe UI',10))
-style.configure('TFrame',background='#eef2f7')
-style.configure('TLabel',background='#eef2f7',font=('Segoe UI',10))
-style.configure('TCheckbutton',background='#eef2f7')
-notebook=ttk.Notebook(root); notebook.pack(fill='both',expand=True,padx=10,pady=10)
+style.configure('.',background=BG,foreground=FG,fieldbackground=PANEL,font=('Segoe UI',10))
+style.configure('TButton',padding=8,background=PANEL,foreground=FG)
+style.map('TButton',background=[('active','#374151')])
+style.configure('TFrame',background=BG)
+style.configure('TLabel',background=BG,foreground=FG)
+style.configure('TCheckbutton',background=BG,foreground=FG)
+style.map('TCheckbutton',background=[('active',BG)])
+style.configure('TEntry',fieldbackground=PANEL,foreground=FG,insertcolor=FG)
+style.configure('TSpinbox',fieldbackground=PANEL,foreground=FG,insertcolor=FG)
+style.configure('Horizontal.TProgressbar',background='#6366f1',troughcolor=PANEL)
+root.option_add('*Text.background',PANEL)
+root.option_add('*Text.foreground',FG)
+root.option_add('*Text.insertBackground',FG)
+root.option_add('*Listbox.background',PANEL)
+root.option_add('*Listbox.foreground',FG)
+root.option_add('*Listbox.selectBackground','#4338ca')
+root.option_add('*Text.font','SegoeUI 10')
+sidebar=ctk.CTkFrame(root,width=200,corner_radius=0,fg_color='#0b1220')
+sidebar.pack(side='left',fill='y'); sidebar.pack_propagate(False)
+ctk.CTkLabel(sidebar,text='Desktop AI',font=('Segoe UI',24,'bold')).pack(pady=(26,0))
+ctk.CTkLabel(sidebar,text='v5.0  /  MCP Edition',text_color=MUTED).pack(pady=(0,24))
+class SidebarPages(ttk.Frame):
+    def __init__(self,parent):
+        super().__init__(parent); self.pages={}; self.buttons={}; self.current=None
+    def add(self,page,text):
+        self.pages[page]=text
+        button=ctk.CTkButton(sidebar,text=text,anchor='w',height=42,fg_color='transparent',hover_color='#263449',command=lambda:self.select(page))
+        button.pack(fill='x',padx=12,pady=3); self.buttons[page]=button
+    def select(self,page):
+        if self.current is not None: self.current.pack_forget(); self.buttons[self.current].configure(fg_color='transparent')
+        self.current=page; page.pack(fill='both',expand=True); self.buttons[page].configure(fg_color='#3730a3')
+notebook=SidebarPages(root); notebook.pack(side='left',fill='both',expand=True,padx=12,pady=12)
 frame=ttk.Frame(notebook,padding=20); notebook.add(frame,text='Recorder')
 ttk.Label(frame,text='Auto Clicker Pro',font=('Segoe UI',22,'bold')).pack(anchor='w')
 ttk.Label(frame,text='Mouse recorder & automation').pack(anchor='w')
@@ -423,7 +457,7 @@ ttk.Label(frame,text='F10 stops playback • F12 exits').pack(pady=12)
 agent=ttk.Frame(notebook,padding=16); notebook.add(agent,text='AI Agent')
 ttk.Label(agent,text='AI Desktop Agent',font=('Segoe UI',20,'bold')).pack(anchor='w')
 ttk.Label(agent,textvariable=request_status).pack(anchor="w")
-ttk.Label(agent,textvariable=ai_status,font=('Segoe UI',11,'bold'),foreground='#2563eb').pack(anchor='w')
+ttk.Label(agent,textvariable=ai_status,font=('Segoe UI',11,'bold'),foreground='#a5b4fc').pack(anchor='w')
 activity=ttk.Progressbar(agent,mode='indeterminate')
 activity.pack(fill='x',pady=(3,5))
 def update_activity(*args):
@@ -431,26 +465,110 @@ def update_activity(*args):
     if active: activity.start(15)
     else: activity.stop()
 ai_status.trace_add('write',update_activity)
-ttk.Label(agent,text='Task instructions').pack(anchor='w',pady=(10,0))
-task_box=tk.Text(agent,height=4,wrap='word'); task_box.pack(fill='x')
-ttk.Checkbutton(agent,text='Approve each action (recommended)',variable=approve).pack(anchor='w',pady=6)
-line=ttk.Frame(agent); line.pack(fill='x')
-ttk.Label(line,text='Maximum steps').pack(side='left'); ttk.Spinbox(line,from_=1,to=100,textvariable=limit,width=6).pack(side='left',padx=8)
-line=ttk.Frame(agent); line.pack(fill='x',pady=8)
-for label,fn in [('Start AI',start_ai),('Pause / Resume F9',toggle),('Stop F10',halt)]: ttk.Button(line,text=label,command=fn).pack(side='left',expand=True,fill='x',padx=2)
+chat=ctk.CTkScrollableFrame(agent,fg_color='#0b1220',corner_radius=12)
+chat.pack(fill='both',expand=True,pady=(8,10))
+def add_chat(role,text):
+    bubble=ctk.CTkFrame(chat,fg_color='#3730a3' if role=='You' else PANEL,corner_radius=10)
+    bubble.pack(fill='x',padx=(48,8) if role=='You' else (8,48),pady=5)
+    ctk.CTkLabel(bubble,text=role,font=('Segoe UI',11,'bold'),text_color='#c7d2fe').pack(anchor='w',padx=12,pady=(8,0))
+    label=ctk.CTkLabel(bubble,text=str(text),justify='left',anchor='w',wraplength=450,font=('Segoe UI',13))
+    label.pack(fill='x',padx=12,pady=(2,10))
+    bubble.bind('<Configure>',lambda e:label.configure(wraplength=max(120,e.width-28)))
+    children=chat.winfo_children()
+    if len(children)>100: children[0].destroy()
+    chat.after_idle(lambda:chat._parent_canvas.yview_moveto(1))
+def reload_chat():
+    for child in chat.winfo_children(): child.destroy()
+    try:
+        for row in task_memory.load():
+            role={'user task':'You','AI response':'Assistant','AI plan / update':'Assistant','task outcome':'Status'}.get(row['kind'])
+            if role: add_chat(role,row['text'])
+    except Exception: add_chat('Status','Unable to load saved conversation.')
+    if not chat.winfo_children(): add_chat('Assistant','Ready to help. Enter a desktop task below.')
+reload_chat()
+log_panel=ttk.Frame(agent)
+log=tk.Text(log_panel,height=8,wrap='word'); log.pack(side='left',fill='both',expand=True)
+scroll=ttk.Scrollbar(log_panel,command=log.yview); scroll.pack(side='right',fill='y'); log.configure(yscrollcommand=scroll.set)
+def toggle_log():
+    if log_panel.winfo_ismapped(): log_panel.pack_forget(); log_button.configure(text='Show action log')
+    else: log_panel.pack(fill='x',before=composer,pady=4); log_button.configure(text='Hide action log')
+log_button=ctk.CTkButton(agent,text='Show action log',command=toggle_log,fg_color=PANEL); log_button.pack(anchor='e',pady=3)
+composer=ttk.Frame(agent); composer.pack(fill='x')
+ttk.Label(composer,text='Task instructions').pack(anchor='w')
+task_box=tk.Text(composer,height=3,wrap='word'); task_box.pack(fill='x',pady=4)
+def send_shortcut(event):
+    start_ai(); return 'break'
+task_box.bind('<Control-Return>',send_shortcut)
+
+# Voice input is opt-in and never automatically submits a task.
+voice_active = False
+voice_language = tk.StringVar(value='en-US')
+voice_output = tk.BooleanVar(value=False)
+voice_status = tk.StringVar(value='Voice ready')
+
+def speak_result(text):
+    if not voice_output.get() or closing: return
+    def run():
+        try:
+            from voice_tools import speak
+            speak(text)
+        except Exception as exc:
+            commands.put((lambda msg=str(exc): voice_status.set('Speech error: '+msg),None))
+    threading.Thread(target=run,daemon=True).start()
+
+def voice_input():
+    global voice_active
+    if voice_active or busy() or recording: return
+    if not messagebox.askyesno('Microphone privacy', 'Record one short instruction and send its audio to Google speech recognition for transcription? Review the text before sending the task.',parent=root): return
+    voice_active=True
+    language=voice_language.get()
+    mic_button.configure(state='disabled')
+    voice_status.set('Listening / transcribing...')
+    def finish_voice(text,error):
+        global voice_active
+        voice_active=False
+        mic_button.configure(state='normal')
+        if error:
+            voice_status.set('Voice error: '+error)
+        elif busy() or recording:
+            voice_status.set('Task active; transcript not inserted.')
+        else:
+            task_box.insert('end', (' ' if task_box.get('1.0','end').strip() else '')+text)
+            voice_status.set('Review transcript, then Send task.')
+    def run():
+        try:
+            from voice_tools import listen
+            text=listen(language)
+            commands.put((lambda:finish_voice(text,None),None))
+        except Exception as exc:
+            commands.put((lambda msg=str(exc) or type(exc).__name__:finish_voice('',msg),None))
+    threading.Thread(target=run,daemon=True).start()
+
+voice_line=ttk.Frame(composer); voice_line.pack(fill='x',pady=3)
+mic_button=ctk.CTkButton(voice_line,text='Speak task',width=110,command=voice_input)
+mic_button.pack(side='left',padx=2)
+ttk.Combobox(voice_line,textvariable=voice_language,values=('en-US','en-PH','fil-PH'),state='readonly',width=9).pack(side='left',padx=4)
+ttk.Checkbutton(voice_line,text='Speak task status',variable=voice_output).pack(side='left',padx=4)
+ttk.Label(composer,textvariable=voice_status,wraplength=600).pack(anchor='w')
+
+line=ttk.Frame(composer); line.pack(fill='x')
+ttk.Checkbutton(line,text='Approve each action',variable=approve).pack(side='left')
+ttk.Label(line,text='Max steps').pack(side='left',padx=(12,2)); ttk.Spinbox(line,from_=1,to=100,textvariable=limit,width=5).pack(side='left')
+line=ttk.Frame(composer); line.pack(fill='x',pady=6)
+for label,fn in [('Send task',start_ai),('Pause / Resume F9',toggle),('Stop F10',halt)]:
+    ctk.CTkButton(line,text=label,command=fn,fg_color='#4338ca' if fn is start_ai else PANEL).pack(side='left',expand=True,fill='x',padx=2)
 memory_status=tk.StringVar()
-memline=ttk.Frame(agent); memline.pack(fill='x',pady=(0,6))
+memline=ttk.Frame(composer); memline.pack(fill='x')
 ttk.Label(memline,textvariable=memory_status).pack(side='left')
 ttk.Button(memline,text='Reset All Tasks',command=reset_tasks).pack(side='right')
 ttk.Button(memline,text='Continue Task',command=continue_task).pack(side='right',padx=4)
 refresh_memory()
-ttk.Label(agent,text='Action log').pack(anchor='w')
-log=tk.Text(agent,height=12,wrap='word'); log.pack(fill='both',expand=True)
 tools_tab=ttk.Frame(notebook,padding=16); notebook.add(tools_tab,text='MCP Tools')
 ttk.Label(tools_tab,text='Local MCP server (stdio)',font=('Segoe UI',18,'bold')).pack(anchor='w')
 ttk.Label(tools_tab,text='Starts automatically for each AI task. No network listener.',wraplength=530).pack(anchor='w',pady=10)
-for name in ['screenshot','screen_size','click','move','type_text','hotkey','press','scroll','list_windows','focus_window','excel_write','draw_path','open_application','inspect_window','click_control','excel_read','excel_format']:
-    ttk.Label(tools_tab,text=name).pack(anchor='w')
+tool_list=tk.Listbox(tools_tab,exportselection=False); tool_list.pack(fill='both',expand=True)
+for name in ['screenshot','screen_size','click','move','type_text','hotkey','press','scroll','list_windows','focus_window','excel_write','draw_path','open_application','inspect_window','click_control','excel_read','excel_format','browser_open','file_list','file_read','file_write','file_search','word_create','word_append','excel_add_sheet','excel_formula','excel_save_copy']:
+    tool_list.insert('end',name)
 workflow_tab=ttk.Frame(notebook,padding=16); notebook.add(workflow_tab,text='Workflows')
 ttk.Label(workflow_tab,text='Reusable workflows',font=('Segoe UI',18,'bold')).pack(anchor='w')
 ttk.Label(workflow_tab,text='Save instructions and run them again with fresh desktop analysis. No blind replay.',wraplength=530).pack(anchor='w',pady=8)
@@ -510,6 +628,21 @@ def invalidate_connection(*args):
     connection_label.configure(foreground='#64748b')
 for variable in (base,model,api_key): variable.trace_add('write',invalidate_connection)
 
+memory_tab=ttk.Frame(notebook,padding=16); notebook.add(memory_tab,text='Memory')
+ttk.Label(memory_tab,text='Saved task history',font=('Segoe UI',20,'bold')).pack(anchor='w')
+ttk.Label(memory_tab,textvariable=memory_status).pack(anchor='w',pady=6)
+memory_view=tk.Text(memory_tab,wrap='word'); memory_view.pack(fill='both',expand=True)
+def show_memory():
+    memory_view.configure(state='normal'); memory_view.delete('1.0','end')
+    try:
+        for row in task_memory.load(): memory_view.insert('end',row['kind']+'\n'+row['text']+'\n\n')
+    except Exception as exc: memory_view.insert('end',str(exc))
+    memory_view.configure(state='disabled')
+ttk.Button(memory_tab,text='Refresh history',command=show_memory).pack(fill='x',pady=4)
+ttk.Button(memory_tab,text='Reset all tasks and workflows',command=lambda:(reset_tasks(),show_memory())).pack(fill='x')
+show_memory()
+notebook.select(agent)
+ctk.CTkLabel(sidebar,text='F10  •  Emergency stop',text_color=MUTED).pack(side='bottom',pady=16)
 keys=keyboard.GlobalHotKeys({f'<{k}>':lambda fn=fn:(stop.set(),pause.clear(),commands.put((fn,None))) if fn is halt else commands.put((fn,None)) for k,fn in [('f6',record),('f7',finish),('f8',play),('f9',toggle),('f10',halt),('f12',close)]})
 keys.start()
 # Stop directly from the listener even while an approval dialog is open.
